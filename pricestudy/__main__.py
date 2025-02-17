@@ -46,7 +46,7 @@ def parse_storage(storage_str):
         return np.nan
 
     storage_str = storage_str.strip().lower()
-    if "ebs only" in storage_str:
+    if "nvme ssd" not in storage_str:
         return 0.0
 
     # e.g. "59 GB                 NVMe SSD"
@@ -77,28 +77,33 @@ def parse_price(price_str):
         return 0.0
 
 
-def parse_network(network_str):
-    if pd.isna(network_str):
-        return np.nan
-
-    # e.g. "Up to 5 Gigabit"
-    network_str = network_str.strip().lower()
-    match = re.search(r"(\d+(\.\d+)?)\s*gigabit", network_str)
-
-    if match:
-        return float(match.group(1))
-
-    return np.nan
-
-
 # Parse the values
 df["vCPUs_Num"] = df["vCPUs"].apply(parse_vcpus)
 df["Memory_GiB"] = df["Instance Memory"].apply(parse_memory)
 df["Storage_GB"] = df["Instance Storage"].apply(parse_storage)
 df["Price_Dollar"] = df["On Demand"].apply(parse_price)
-df["Network_Gbit"] = df["Network Performance"].apply(parse_network)
 
 df_filtered = df[(df["Storage_GB"] > 0) & (df["Price_Dollar"] > 0)]
+
+df_filtered = df_filtered[
+    df_filtered["Name"]
+    .str.lower()
+    .str.startswith(
+        (
+            "t",  # General purpose
+            "m",  # General purpose
+            "c",  # Compute-optimized
+            "r",  # Memory-optimized
+            "x",  # Memory-optimized
+            "u",  # Memory-optimized
+            "z",  # Memory-optimized
+        )
+    )
+    & ~df["Name"].str.lower().str.startswith("trn")
+]
+
+name_list = df_filtered["Name"].tolist()
+print(name_list)
 
 
 # Outlier removal
@@ -114,13 +119,12 @@ def remove_outliers(df, column):
 df_filtered = remove_outliers(df_filtered, "Storage_GB")
 df_filtered = remove_outliers(df_filtered, "Memory_GiB")
 df_filtered = remove_outliers(df_filtered, "vCPUs_Num")
-df_filtered = remove_outliers(df_filtered, "Network_Gbit")
 
 # Correlation analysis
 price_col = "Price_Dollar"
 
 # Make sure columns exist
-required_cols = [price_col, "vCPUs_Num", "Memory_GiB", "Storage_GB", "Network_Gbit"]
+required_cols = [price_col, "vCPUs_Num", "Memory_GiB", "Storage_GB"]
 for col in required_cols:
     if col not in df_filtered.columns:
         raise ValueError(f"Column '{col}' not found in dataframe!")
@@ -134,32 +138,25 @@ print(corr_matrix, "\n")
 pearson_cpu, p_cpu = pearsonr(df_filtered[price_col], df_filtered["vCPUs_Num"])
 pearson_mem, p_mem = pearsonr(df_filtered[price_col], df_filtered["Memory_GiB"])
 pearson_sto, p_sto = pearsonr(df_filtered[price_col], df_filtered["Storage_GB"])
-pearson_net, p_net = pearsonr(df_filtered[price_col], df_filtered["Network_Gbit"])
 
 print("Pearson correlation coefficients (OnDemandPrice vs ...):")
 print(f"  vCPUs:     r={pearson_cpu:.3f}, p={p_cpu:.3e}")
 print(f"  MemoryGiB: r={pearson_mem:.3f}, p={p_mem:.3e}")
 print(f"  StorageGB: r={pearson_sto:.3f}, p={p_sto:.3e}")
-print(f"  NetworkGbit: r={pearson_net:.3f}, p={p_net:.3e}\n")
 
 # Pairwise Spearman correlations
 spearman_cpu, _ = spearmanr(df_filtered[price_col], df_filtered["vCPUs_Num"])
 spearman_mem, _ = spearmanr(df_filtered[price_col], df_filtered["Memory_GiB"])
 spearman_sto, _ = spearmanr(df_filtered[price_col], df_filtered["Storage_GB"])
-spearman_net, _ = spearmanr(df_filtered[price_col], df_filtered["Network_Gbit"])
 
 print("Spearman correlation coefficients (OnDemandPrice vs ...):")
 print(f"  vCPUs:     r={spearman_cpu:.3f}")
 print(f"  MemoryGiB: r={spearman_mem:.3f}")
 print(f"  StorageGB: r={spearman_sto:.3f}")
-print(f"  NetworkGbit: r={spearman_net:.3f}\n")
 
 # Perform linear regression to derive per-unit pricing
-X = df_filtered[["vCPUs_Num", "Memory_GiB", "Storage_GB", "Network_Gbit"]]
+X = df_filtered[["vCPUs_Num", "Memory_GiB", "Storage_GB"]]
 y = df_filtered[price_col]  # target
-
-# Add a constant to get an intercept in the model
-X = sm.add_constant(X)
 
 # Fit ordinary least squares regression
 model = sm.OLS(y, X).fit()
@@ -168,13 +165,13 @@ print("OLS Regression Results:")
 print(model.summary())
 
 # Set up a grid layout (2 rows, 3 columns)
-fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+fig, axes = plt.subplots(1, 5, figsize=(25, 5))
 
 # Correlation Matrix Heatmap
 sns.heatmap(
-    corr_matrix, annot=True, cmap="coolwarm", fmt=".2f", linewidths=0.5, ax=axes[0, 0]
+    corr_matrix, annot=True, cmap="coolwarm", fmt=".2f", linewidths=0.5, ax=axes[0]
 )
-axes[0, 0].set_title("Correlation Matrix (Pearson)")
+axes[0].set_title("Correlation Matrix (Pearson)")
 
 # Regression plot (vCPUs vs Price)
 sns.regplot(
@@ -182,11 +179,11 @@ sns.regplot(
     y=df_filtered[price_col],
     scatter=True,
     line_kws={"color": "red"},
-    ax=axes[0, 1],
+    ax=axes[1],
 )
-axes[0, 1].set_title("Regression: vCPUs vs Price")
-axes[0, 1].set_xlabel("vCPUs")
-axes[0, 1].set_ylabel("Price ($)")
+axes[1].set_title("Regression: vCPUs vs Price")
+axes[1].set_xlabel("vCPUs")
+axes[1].set_ylabel("Price ($)")
 
 # Regression plot (Memory vs Price)
 sns.regplot(
@@ -194,11 +191,11 @@ sns.regplot(
     y=df_filtered[price_col],
     scatter=True,
     line_kws={"color": "red"},
-    ax=axes[0, 2],
+    ax=axes[2],
 )
-axes[0, 2].set_title("Regression: Memory vs Price")
-axes[0, 2].set_xlabel("Memory (GiB)")
-axes[0, 2].set_ylabel("Price ($)")
+axes[2].set_title("Regression: Memory vs Price")
+axes[2].set_xlabel("Memory (GiB)")
+axes[2].set_ylabel("Price ($)")
 
 # Regression plot (Storage vs Price)
 sns.regplot(
@@ -206,29 +203,17 @@ sns.regplot(
     y=df_filtered[price_col],
     scatter=True,
     line_kws={"color": "red"},
-    ax=axes[1, 0],
+    ax=axes[3],
 )
-axes[1, 0].set_title("Regression: Storage vs Price")
-axes[1, 0].set_xlabel("Storage (GB)")
-axes[1, 0].set_ylabel("Price ($)")
-
-# Regression plot (Network vs Price)
-sns.regplot(
-    x=df_filtered["Network_Gbit"],
-    y=df_filtered[price_col],
-    scatter=True,
-    line_kws={"color": "red"},
-    ax=axes[1, 1],
-)
-axes[1, 1].set_title("Regression: Network vs Price")
-axes[1, 1].set_xlabel("Network (Gbit)")
-axes[1, 1].set_ylabel("Price ($)")
+axes[3].set_title("Regression: Storage vs Price")
+axes[3].set_xlabel("Storage (GB)")
+axes[3].set_ylabel("Price ($)")
 
 # Residuals Histogram
-sns.histplot(model.resid, kde=True, color="blue", ax=axes[1, 2])
-axes[1, 2].set_title("Residuals from OLS Regression")
-axes[1, 2].set_xlabel("Residuals")
-axes[1, 2].set_ylabel("Frequency")
+sns.histplot(model.resid, kde=True, color="blue", ax=axes[4])
+axes[4].set_title("Residuals from OLS Regression")
+axes[4].set_xlabel("Residuals")
+axes[4].set_ylabel("Frequency")
 
 # Adjust layout for better spacing
 plt.tight_layout()
