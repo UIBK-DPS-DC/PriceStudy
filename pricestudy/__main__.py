@@ -1,3 +1,4 @@
+from matplotlib.colors import LinearSegmentedColormap
 from scipy.stats import pearsonr, spearmanr
 
 import matplotlib.pyplot as plt
@@ -7,7 +8,6 @@ import numpy as np
 import statsmodels.api as sm
 
 import re
-
 
 # Load the data
 csv_filename = "data/ec2_prices.csv"
@@ -164,57 +164,98 @@ model = sm.OLS(y, X).fit()
 print("OLS Regression Results:")
 print(model.summary())
 
-# Set up a grid layout (2 rows, 3 columns)
+# Use a clean style
+sns.set_theme(style="whitegrid")
+
+# Define your 5 palette colors for lines and hist
+dark_green = "#5ba300"
+light_green = "#89ce00"
+blue = "#0073e6"
+pink = "#e6308a"
+dark_pink = "#b51963"
+
+# For the correlation heatmap, create a custom colormap that goes from white to blue
+heatmap_cmap = LinearSegmentedColormap.from_list(
+    "heatmap_cmap", ["#ffffff", blue], N=256
+)
+
 fig, axes = plt.subplots(1, 5, figsize=(25, 5))
 
-# Correlation Matrix Heatmap
+# Define the label mapping for both rows and columns
+label_mapping = {
+    "Price_Dollar": "Price ($)",
+    "vCPUs_Num": "vCPUs",
+    "Memory_GiB": "Memory (GiB)",
+    "Storage_GB": "Storage (GB)",
+}
+
+# Rename the index and columns in the correlation matrix
+corr_matrix = corr_matrix.rename(index=label_mapping, columns=label_mapping)
+
+# 1) Correlation Matrix Heatmap
 sns.heatmap(
-    corr_matrix, annot=True, cmap="coolwarm", fmt=".2f", linewidths=0.5, ax=axes[0]
+    corr_matrix,
+    annot=True,
+    cmap=heatmap_cmap,  # single gradient colormap
+    fmt=".2f",
+    linewidths=0.5,
+    ax=axes[0],
+    cbar_kws={"shrink": 0.8},  # smaller colorbar
 )
 axes[0].set_title("Correlation Matrix (Pearson)")
 
-# Regression plot (vCPUs vs Price)
+# 2) Regression plot (vCPUs vs Price)
 sns.regplot(
     x=df_filtered["vCPUs_Num"],
     y=df_filtered[price_col],
-    scatter=True,
-    line_kws={"color": "red"},
+    scatter_kws={"color": blue},  # scatter points
+    line_kws={"color": pink},  # regression line
     ax=axes[1],
 )
 axes[1].set_title("Regression: vCPUs vs Price")
 axes[1].set_xlabel("vCPUs")
 axes[1].set_ylabel("Price ($)")
 
-# Regression plot (Memory vs Price)
+# 3) Regression plot (Memory vs Price)
 sns.regplot(
     x=df_filtered["Memory_GiB"],
     y=df_filtered[price_col],
-    scatter=True,
-    line_kws={"color": "red"},
+    scatter_kws={"color": blue},
+    line_kws={"color": pink},
     ax=axes[2],
 )
 axes[2].set_title("Regression: Memory vs Price")
 axes[2].set_xlabel("Memory (GiB)")
 axes[2].set_ylabel("Price ($)")
 
-# Regression plot (Storage vs Price)
+# 4) Regression plot (Storage vs Price)
 sns.regplot(
     x=df_filtered["Storage_GB"],
     y=df_filtered[price_col],
-    scatter=True,
-    line_kws={"color": "red"},
+    scatter_kws={"color": blue},
+    line_kws={"color": pink},
     ax=axes[3],
 )
 axes[3].set_title("Regression: Storage vs Price")
 axes[3].set_xlabel("Storage (GB)")
 axes[3].set_ylabel("Price ($)")
 
-# Residuals Histogram
-sns.histplot(model.resid, kde=True, color="blue", ax=axes[4])
+# 5) Residuals Histogram
+sns.histplot(
+    model.resid,
+    color=blue,
+    kde=False,
+    stat="density",
+    ax=axes[4],
+)
+sns.kdeplot(
+    model.resid,
+    color=pink,
+    ax=axes[4],
+)
 axes[4].set_title("Residuals from OLS Regression")
 axes[4].set_xlabel("Residuals")
 axes[4].set_ylabel("Frequency")
 
-# Adjust layout for better spacing
 plt.tight_layout()
 plt.show()
