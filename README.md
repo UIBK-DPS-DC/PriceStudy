@@ -4,7 +4,7 @@ Price study for various computing resources.
 
 # Cloud resources
 
-![cloud](cloud.png)
+![cloud](cloud.png?)
 
 For non-GPU instances, based on an analysis of EC2 price data, the correlation of price, vCPUs, memory, and storage correlates as shows in the figure above.
 
@@ -60,7 +60,7 @@ For an error of:
 
 _$0.001761760000000001_
 
-![cloud_gpu](cloud_gpu.png)
+![cloud_gpu](cloud_gpu.png?)
 
 For GPU instances, a similar analysis gives us the contribution of the number of GPUs.
 
