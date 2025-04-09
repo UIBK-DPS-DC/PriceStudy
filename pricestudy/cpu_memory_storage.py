@@ -79,31 +79,31 @@ def parse_price(price_str):
 
 # Parse the values
 df["vCPUs_Num"] = df["vCPUs"].apply(parse_vcpus)
+df["GPUs_Num"] = df["GPUs"]
 df["Memory_GiB"] = df["Instance Memory"].apply(parse_memory)
 df["Storage_GB"] = df["Instance Storage"].apply(parse_storage)
 df["Price_Dollar"] = df["On Demand"].apply(parse_price)
 
-df_filtered = df[(df["Storage_GB"] > 0) & (df["Price_Dollar"] > 0)]
+df = df[(df["GPUs_Num"] == 0) & (df["Storage_GB"] > 0) & (df["Price_Dollar"] > 0)]
 
-df_filtered = df_filtered[
-    df_filtered["Name"]
-    .str.lower()
-    .str.startswith(
+df = df[
+    df["Name"].str.startswith(
         (
-            "t",  # General purpose
-            "m",  # General purpose
-            "c",  # Compute-optimized
-            "r",  # Memory-optimized
-            "x",  # Memory-optimized
-            "u",  # Memory-optimized
+            "M",  # General purpose
+            "T",  # General purpose
+            "C",  # Compute-optimized
+            "R",  # Memory-optimized
+            "X",  # Memory-optimized
+            "U",  # Memory-optimized
             "z",  # Memory-optimized
+            "P",  # Accelerated computing
+            "G",  # Accelerated computing
         )
     )
-    & ~df["Name"].str.lower().str.startswith("trn")
+    & ~df["Name"].str.startswith("Mac")
 ]
 
-name_list = df_filtered["Name"].tolist()
-print(name_list)
+print(f"Number of rows: {df.shape[0]}")
 
 
 # Outlier removal
@@ -116,9 +116,13 @@ def remove_outliers(df, column):
     return df[(df[column] >= lower_bound) & (df[column] <= upper_bound)]
 
 
-df_filtered = remove_outliers(df_filtered, "Storage_GB")
-df_filtered = remove_outliers(df_filtered, "Memory_GiB")
-df_filtered = remove_outliers(df_filtered, "vCPUs_Num")
+df = remove_outliers(df, "Storage_GB")
+df = remove_outliers(df, "Memory_GiB")
+df = remove_outliers(df, "vCPUs_Num")
+df = remove_outliers(df, "Price_Dollar")
+
+average_price = df["Price_Dollar"].mean()
+print(f"Average Price: ${average_price:.4f} ($/h)")
 
 # Correlation analysis
 price_col = "Price_Dollar"
@@ -126,37 +130,17 @@ price_col = "Price_Dollar"
 # Make sure columns exist
 required_cols = [price_col, "vCPUs_Num", "Memory_GiB", "Storage_GB"]
 for col in required_cols:
-    if col not in df_filtered.columns:
+    if col not in df.columns:
         raise ValueError(f"Column '{col}' not found in dataframe!")
 
 # Basic correlation matrix (Pearson)
-corr_matrix = df_filtered[required_cols].corr()
+corr_matrix = df[required_cols].corr()
 print("Correlation matrix (Pearson):")
 print(corr_matrix, "\n")
 
-# Pairwise Pearson correlations
-pearson_cpu, p_cpu = pearsonr(df_filtered[price_col], df_filtered["vCPUs_Num"])
-pearson_mem, p_mem = pearsonr(df_filtered[price_col], df_filtered["Memory_GiB"])
-pearson_sto, p_sto = pearsonr(df_filtered[price_col], df_filtered["Storage_GB"])
-
-print("Pearson correlation coefficients (OnDemandPrice vs ...):")
-print(f"  vCPUs:     r={pearson_cpu:.3f}, p={p_cpu:.3e}")
-print(f"  MemoryGiB: r={pearson_mem:.3f}, p={p_mem:.3e}")
-print(f"  StorageGB: r={pearson_sto:.3f}, p={p_sto:.3e}")
-
-# Pairwise Spearman correlations
-spearman_cpu, _ = spearmanr(df_filtered[price_col], df_filtered["vCPUs_Num"])
-spearman_mem, _ = spearmanr(df_filtered[price_col], df_filtered["Memory_GiB"])
-spearman_sto, _ = spearmanr(df_filtered[price_col], df_filtered["Storage_GB"])
-
-print("Spearman correlation coefficients (OnDemandPrice vs ...):")
-print(f"  vCPUs:     r={spearman_cpu:.3f}")
-print(f"  MemoryGiB: r={spearman_mem:.3f}")
-print(f"  StorageGB: r={spearman_sto:.3f}")
-
 # Perform linear regression to derive per-unit pricing
-X = df_filtered[["vCPUs_Num", "Memory_GiB", "Storage_GB"]]
-y = df_filtered[price_col]  # target
+X = df[["vCPUs_Num", "Memory_GiB", "Storage_GB"]]
+y = df[price_col]  # target
 
 # Fit ordinary least squares regression
 model = sm.OLS(y, X).fit()
@@ -167,7 +151,7 @@ print(model.summary())
 # Use a clean style
 sns.set_theme(style="whitegrid")
 
-# Define your 5 palette colors for lines and hist
+# Define palette colors for lines and hist
 dark_green = "#5ba300"
 light_green = "#89ce00"
 blue = "#0073e6"
@@ -179,11 +163,11 @@ heatmap_cmap = LinearSegmentedColormap.from_list(
     "heatmap_cmap", ["#ffffff", blue], N=256
 )
 
-fig, axes = plt.subplots(1, 5, figsize=(25, 5))
+fig, axes = plt.subplots(1, 4, figsize=(25, 5))
 
 # Define the label mapping for both rows and columns
 label_mapping = {
-    "Price_Dollar": "Price ($)",
+    "Price_Dollar": "Price ($/h)",
     "vCPUs_Num": "vCPUs",
     "Memory_GiB": "Memory (GiB)",
     "Storage_GB": "Storage (GB)",
@@ -192,53 +176,74 @@ label_mapping = {
 # Rename the index and columns in the correlation matrix
 corr_matrix = corr_matrix.rename(index=label_mapping, columns=label_mapping)
 
-# 1) Correlation Matrix Heatmap
-sns.heatmap(
-    corr_matrix,
-    annot=True,
-    cmap=heatmap_cmap,  # single gradient colormap
-    fmt=".2f",
-    linewidths=0.5,
-    ax=axes[0],
-    cbar_kws={"shrink": 0.8},  # smaller colorbar
-)
-axes[0].set_title("Correlation Matrix (Pearson)")
-
 # 2) Regression plot (vCPUs vs Price)
 sns.regplot(
-    x=df_filtered["vCPUs_Num"],
-    y=df_filtered[price_col],
+    x=df["vCPUs_Num"],
+    y=df[price_col],
     scatter_kws={"color": blue},  # scatter points
     line_kws={"color": pink},  # regression line
-    ax=axes[1],
+    ax=axes[0],
 )
-axes[1].set_title("Regression: vCPUs vs Price")
-axes[1].set_xlabel("vCPUs")
-axes[1].set_ylabel("Price ($)")
+axes[0].set_xlabel("vCPUs")
+axes[0].set_ylabel("Price ($/h)")
+
+# Pearson correlation
+pearson_cpu, _ = pearsonr(df[price_col], df["vCPUs_Num"])
+axes[0].text(
+    0.95,
+    0.05,
+    f"r={pearson_cpu:.3f}",
+    ha="right",
+    va="bottom",
+    transform=axes[0].transAxes,
+    color=dark_pink,
+)
 
 # 3) Regression plot (Memory vs Price)
 sns.regplot(
-    x=df_filtered["Memory_GiB"],
-    y=df_filtered[price_col],
+    x=df["Memory_GiB"],
+    y=df[price_col],
+    scatter_kws={"color": blue},
+    line_kws={"color": pink},
+    ax=axes[1],
+)
+axes[1].set_xlabel("Memory (GiB)")
+axes[1].set_ylabel("Price ($/h)")
+
+# Pearson correlation
+pearson_mem, _ = pearsonr(df[price_col], df["Memory_GiB"])
+axes[1].text(
+    0.95,
+    0.05,
+    f"r={pearson_mem:.3f}",
+    ha="right",
+    va="bottom",
+    transform=axes[1].transAxes,
+    color=dark_pink,
+)
+
+# 4) Regression plot (Storage vs Price)
+sns.regplot(
+    x=df["Storage_GB"],
+    y=df[price_col],
     scatter_kws={"color": blue},
     line_kws={"color": pink},
     ax=axes[2],
 )
-axes[2].set_title("Regression: Memory vs Price")
-axes[2].set_xlabel("Memory (GiB)")
-axes[2].set_ylabel("Price ($)")
+axes[2].set_xlabel("Storage (GB)")
+axes[2].set_ylabel("Price ($/h)")
 
-# 4) Regression plot (Storage vs Price)
-sns.regplot(
-    x=df_filtered["Storage_GB"],
-    y=df_filtered[price_col],
-    scatter_kws={"color": blue},
-    line_kws={"color": pink},
-    ax=axes[3],
+# Pearson correlation
+pearson_sto, _ = pearsonr(df[price_col], df["Storage_GB"])
+axes[2].text(
+    0.95,
+    0.05,
+    f"r={pearson_sto:.3f}",
+    ha="right",
+    va="bottom",
+    transform=axes[2].transAxes,
+    color=dark_pink,
 )
-axes[3].set_title("Regression: Storage vs Price")
-axes[3].set_xlabel("Storage (GB)")
-axes[3].set_ylabel("Price ($)")
 
 # 5) Residuals Histogram
 sns.histplot(
@@ -246,16 +251,15 @@ sns.histplot(
     color=blue,
     kde=False,
     stat="density",
-    ax=axes[4],
+    ax=axes[3],
 )
 sns.kdeplot(
     model.resid,
     color=pink,
-    ax=axes[4],
+    ax=axes[3],
 )
-axes[4].set_title("Residuals from OLS Regression")
-axes[4].set_xlabel("Residuals")
-axes[4].set_ylabel("Frequency")
+axes[3].set_xlabel("Residuals")
+axes[3].set_ylabel("Frequency")
 
 plt.tight_layout()
 plt.show()
