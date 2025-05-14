@@ -85,6 +85,7 @@ model = sm.OLS(y, X).fit()
 print(model.summary())
 
 sns.set_theme(style="whitegrid")
+sns.set_context("paper")
 
 # Define palette colors for lines and hist
 dark_green = "#5ba300"
@@ -93,7 +94,7 @@ blue = "#0073e6"
 pink = "#e6308a"
 dark_pink = "#b51963"
 
-fig, axes = plt.subplots(1, 2, figsize=(18, 5))
+fig, axes = plt.subplots(1, 2, figsize=(14, 7))
 
 # 1) Correlation matrix
 corr_matrix = df[["GPUs_Num", "Price_Dollar"]].corr()

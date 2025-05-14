@@ -148,8 +148,8 @@ model = sm.OLS(y, X).fit()
 print("OLS Regression Results:")
 print(model.summary())
 
-# Use a clean style
 sns.set_theme(style="whitegrid")
+sns.set_context("paper")
 
 # Define palette colors for lines and hist
 dark_green = "#5ba300"
@@ -158,12 +158,7 @@ blue = "#0073e6"
 pink = "#e6308a"
 dark_pink = "#b51963"
 
-# For the correlation heatmap, create a custom colormap that goes from white to blue
-heatmap_cmap = LinearSegmentedColormap.from_list(
-    "heatmap_cmap", ["#ffffff", blue], N=256
-)
-
-fig, axes = plt.subplots(1, 4, figsize=(25, 5))
+fig, axes = plt.subplots(1, 4, figsize=(28, 7))
 
 # Define the label mapping for both rows and columns
 label_mapping = {
